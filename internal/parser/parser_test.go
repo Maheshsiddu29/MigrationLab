@@ -139,3 +139,132 @@ func TestParseWhitespaceOnlyMigration(t *testing.T) {
 		t.Fatalf("Parse() returned %d statements, want 0", len(parsed.Statements))
 	}
 }
+
+func TestParseFunctionBodyUsesPostgreSQLStatementBoundaries(t *testing.T) {
+	t.Parallel()
+
+	functionSQL := `CREATE FUNCTION migrationlab_test()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    PERFORM 1;
+    PERFORM 2;
+END;
+$$;`
+	tableSQL := `CREATE TABLE users (
+    id bigint
+);`
+	source := functionSQL + "\n\n" + tableSQL
+
+	parsed, err := Parse(source)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if len(parsed.Statements) != 2 {
+		t.Fatalf("Parse() returned %d statements, want 2", len(parsed.Statements))
+	}
+	if parsed.Statements[0].SQL != functionSQL {
+		t.Fatalf("first statement SQL = %q, want %q", parsed.Statements[0].SQL, functionSQL)
+	}
+	wantSecondSQL := "\n\n" + tableSQL
+	if parsed.Statements[1].SQL != wantSecondSQL {
+		t.Fatalf("second statement SQL = %q, want %q", parsed.Statements[1].SQL, wantSecondSQL)
+	}
+}
+
+func TestParseSemicolonInsideString(t *testing.T) {
+	t.Parallel()
+
+	source := `INSERT INTO messages(body)
+VALUES ('hello;world');`
+
+	parsed, err := Parse(source)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if len(parsed.Statements) != 1 {
+		t.Fatalf("Parse() returned %d statements, want 1", len(parsed.Statements))
+	}
+	if parsed.Statements[0].SQL != source {
+		t.Fatalf("statement SQL = %q, want %q", parsed.Statements[0].SQL, source)
+	}
+}
+
+func TestParseRetainsStatementSource(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		source string
+		want   []string
+	}{
+		{
+			name:   "comment before statement",
+			source: "-- create the table\nCREATE TABLE users (id bigint);",
+			want:   []string{"-- create the table\nCREATE TABLE users (id bigint);"},
+		},
+		{
+			name: "comments between statements",
+			source: `CREATE TABLE users (id bigint);
+
+-- add the supporting index
+CREATE INDEX idx_users_id
+ON users(id);`,
+			want: []string{
+				"CREATE TABLE users (id bigint);",
+				"\n\n-- add the supporting index\nCREATE INDEX idx_users_id\nON users(id);",
+			},
+		},
+		{
+			name: "multiline statements preserve order",
+			source: `ALTER TABLE users
+ADD COLUMN status TEXT;
+
+UPDATE users
+SET status = 'active';`,
+			want: []string{
+				"ALTER TABLE users\nADD COLUMN status TEXT;",
+				"\n\nUPDATE users\nSET status = 'active';",
+			},
+		},
+		{
+			name:   "trailing whitespace",
+			source: "SELECT 1;\n\t  ",
+			want:   []string{"SELECT 1;"},
+		},
+		{
+			name:   "trailing semicolon",
+			source: "SELECT 1;",
+			want:   []string{"SELECT 1;"},
+		},
+		{
+			name:   "no trailing semicolon",
+			source: "SELECT 1",
+			want:   []string{"SELECT 1"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			parsed, err := Parse(test.source)
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			if len(parsed.Statements) != len(test.want) {
+				t.Fatalf("Parse() returned %d statements, want %d", len(parsed.Statements), len(test.want))
+			}
+			for position, want := range test.want {
+				statement := parsed.Statements[position]
+				if statement.Position != position {
+					t.Errorf("statement position = %d, want %d", statement.Position, position)
+				}
+				if statement.SQL != want {
+					t.Errorf("statement SQL = %q, want %q", statement.SQL, want)
+				}
+			}
+		})
+	}
+}
