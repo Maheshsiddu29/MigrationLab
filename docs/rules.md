@@ -2,7 +2,7 @@
 
 MigrationLab rule identifiers use the `ML` namespace followed by a three-digit number. The namespace is reserved here so future diagnostics can remain stable across CLI and report formats.
 
-No safety rules are implemented in Phase 1. The following initial rule set is planned:
+No safety rules are implemented in Phase 2. The parser can identify PostgreSQL syntax, but it does not evaluate safety, assign severity, or emit findings. The following initial rule set is planned:
 
 - **ML001 — CREATE INDEX without CONCURRENTLY:** identify indexes that may block writes while they are built.
 - **ML002 — DROP TABLE:** flag destructive table removal.
@@ -17,4 +17,4 @@ No safety rules are implemented in Phase 1. The following initial rule set is pl
 - **ML011 — DROP INDEX:** identify index removal that may affect live query performance or block activity.
 - **ML012 — multiple high-lock DDL operations:** identify migrations that combine several operations with strong lock requirements.
 
-The descriptions are planning notes, not implemented detection guarantees. Parsing, rule evaluation, severity levels, suppressions, and remediation guidance belong to later phases.
+The descriptions are planning notes, not implemented detection guarantees. Rule evaluation, severity levels, suppressions, and remediation guidance belong to later phases.
