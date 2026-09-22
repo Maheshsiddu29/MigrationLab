@@ -1,4 +1,4 @@
-// Package migration locates migration files for analysis.
+// Package migration discovers, loads, and parses migration files.
 package migration
 
 import (
